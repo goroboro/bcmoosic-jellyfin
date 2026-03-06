@@ -1,0 +1,10 @@
+{
+  "name": "bcMoosic",
+  "short_name": "bcMoosic",
+  "description": "Bandcamp music collection manager for Jellyfin",
+  "start_url": "/BcMoosic/",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#0f0f1a",
+  "icons": []
+}

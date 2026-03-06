@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0f1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>bcMoosic</title>
+  <link rel="manifest" href="/BcMoosic/static/manifest.json">
+  <link rel="stylesheet" href="/BcMoosic/static/style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-title">
+      <svg class="logo" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="12" r="3" fill="currentColor"/>
+        <line x1="12" y1="3" x2="12" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      bcMoosic
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <a href="/web/" title="Back to Jellyfin" class="jellyfin-home-link">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      </a>
+      <span id="auth-badge" class="badge">Checking…</span>
+    </div>
+  </header>
+
+  <main id="app">
+
+    <!-- ======================== BANDCAMP ======================== -->
+    <section id="page-purchases" class="page active">
+      <div class="bc-segments">
+        <button type="button" class="bc-seg active" data-seg="owned">Owned</button>
+        <button type="button" class="bc-seg" data-seg="wishlist">Wishlist</button>
+        <button type="button" class="bc-seg" data-seg="following">Following</button>
+      </div>
+
+      <div id="bc-owned">
+        <div class="toolbar">
+          <select id="filter-select">
+            <option value="all">All purchases</option>
+            <option value="new">Not downloaded</option>
+          </select>
+          <button id="btn-load-more" class="btn-ghost" disabled>Load more</button>
+        </div>
+        <div id="purchases-list"></div>
+      </div>
+
+      <div id="bc-wishlist" style="display:none">
+        <div id="wishlist-list"></div>
+      </div>
+
+      <div id="bc-following" style="display:none">
+        <div id="following-list"></div>
+      </div>
+    </section>
+
+    <!-- ======================== DOWNLOADS ======================== -->
+    <section id="page-downloads" class="page">
+      <div id="downloads-list">
+        <div class="empty-state">No downloads yet.</div>
+      </div>
+    </section>
+
+    <!-- ======================== COLLECTION ====================== -->
+    <section id="page-collection" class="page">
+      <div id="collection-list">
+        <div class="empty-state">Tap to load collection.</div>
+      </div>
+    </section>
+
+    <!-- ======================== SETTINGS ======================== -->
+    <section id="page-settings" class="page">
+      <div class="settings-block">
+        <h2>Sign in via cookie</h2>
+        <p class="hint">
+          On your phone: open <strong>Firefox</strong> → install the
+          <strong>Cookie Editor</strong> add-on → go to bandcamp.com and log in →
+          tap Cookie Editor → find the <code>identity</code> cookie → tap it and copy the
+          <strong>Value</strong> field → paste it below.
+        </p>
+        <form id="cookie-form">
+          <label>
+            Identity cookie value
+            <textarea id="cookie-identity" rows="4" placeholder="Paste cookie value here…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+          </label>
+          <label>
+            Bandcamp username <span style="opacity:.6;font-size:.85em">(optional — detected automatically)</span>
+            <input type="text" id="cookie-username" placeholder="yourusername" autocomplete="off" autocorrect="off" autocapitalize="off">
+          </label>
+          <button type="submit" class="btn-primary">Save &amp; verify</button>
+          <div id="cookie-status" class="form-status"></div>
+        </form>
+      </div>
+
+      <div class="settings-block">
+        <h2>Preferences</h2>
+        <form id="prefs-form">
+          <label>
+            Music directory
+            <input type="text" id="pref-music-dir" placeholder="/music (auto-detected from Jellyfin library)" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+          </label>
+          <label>
+            Default download format
+            <select id="pref-format">
+              <option value="mp3-320">MP3 320 kbps</option>
+              <option value="flac">FLAC (lossless)</option>
+              <option value="aac-hi">AAC Hi</option>
+              <option value="vorbis">Ogg Vorbis</option>
+              <option value="alac">ALAC</option>
+              <option value="wav">WAV</option>
+              <option value="aiff-lossless">AIFF (lossless)</option>
+            </select>
+          </label>
+          <button type="submit" class="btn-secondary">Save</button>
+          <div id="prefs-status" class="form-status"></div>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Tab bar -->
+  <nav class="tab-bar" role="tablist">
+    <button class="tab active" data-page="purchases" role="tab" aria-selected="true">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 2H6c-1.1 0-2 .9-2 2v16l8-3 8 3V4c0-1.1-.9-2-2-2z"/></svg>
+      <span>Bandcamp</span>
+    </button>
+    <button class="tab" data-page="downloads" role="tab" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      <span>Downloads</span>
+    </button>
+    <button class="tab" data-page="collection" role="tab" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+      <span>Collection</span>
+    </button>
+    <button class="tab" data-page="settings" role="tab" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.03-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <script src="/BcMoosic/static/app.js"></script>
+</body>
+</html>
