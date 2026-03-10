@@ -211,11 +211,17 @@ function renderPurchases() {
   state.purchases.forEach(item => list.appendChild(makePurchaseCard(item)));
 }
 
+let _fmtOptionsHtml = '';
+let _fmtOptionsCacheKey = '';
+
 function formatOptions() {
+  if (state.defaultFormat === _fmtOptionsCacheKey) return _fmtOptionsHtml;
   const fmts = ['mp3-320', 'flac', 'aac-hi', 'vorbis', 'alac', 'wav', 'aiff-lossless'];
-  return fmts.map(f =>
+  _fmtOptionsHtml = fmts.map(f =>
     `<option value="${f}"${f === state.defaultFormat ? ' selected' : ''}>${f}</option>`
   ).join('');
+  _fmtOptionsCacheKey = state.defaultFormat;
+  return _fmtOptionsHtml;
 }
 
 function makePurchaseCard(item) {
@@ -290,7 +296,6 @@ async function loadWishlist() {
   list.innerHTML = '<div class="empty-state">Loading…</div>';
   try {
     const data = await api(`${API_BASE}/wishlist`);
-    console.log('[bcMoosic] wishlist response keys:', Object.keys(data), 'items:', data.items?.length, 'raw:', JSON.stringify(data).slice(0, 200));
     state.wishlistLoaded = true;
     if (!data.items?.length) {
       list.innerHTML = '<div class="empty-state">Wishlist is empty.</div>';
@@ -460,16 +465,17 @@ async function loadCollection() {
       return;
     }
 
-    const sortKey = normalizeName;
-    const sorted = [...data.artists].sort((a, b) => sortKey(a.name).localeCompare(sortKey(b.name)));
+    // Schwartzian transform: compute sort key once per artist, reuse throughout
+    const sortedWithKeys = data.artists
+      .map(a => ({ artist: a, key: normalizeName(a.name) }))
+      .sort((x, y) => x.key.localeCompare(y.key));
 
     const groups = {};
     const letterOrder = [];
-    for (const artist of sorted) {
-      const key = sortKey(artist.name);
+    for (const { artist, key } of sortedWithKeys) {
       const letter = /^[a-z]/i.test(key) ? key[0].toUpperCase() : '#';
       if (!groups[letter]) { groups[letter] = []; letterOrder.push(letter); }
-      groups[letter].push(artist);
+      groups[letter].push({ artist, key });
     }
 
     const allLetters = ['#', ...Array.from({length: 26}, (_, i) => String.fromCharCode(65 + i))];
@@ -501,13 +507,13 @@ async function loadCollection() {
       hdr.textContent = letter;
       list.appendChild(hdr);
 
-      for (const artist of groups[letter]) {
+      for (const { artist, key } of groups[letter]) {
         const sec = document.createElement('div');
         sec.className = 'artist-section';
         const nameEl = document.createElement('div');
         nameEl.className = 'artist-name';
         nameEl.textContent = artist.name;
-        const followedUrl = followedMap.get(normalizeName(artist.name));
+        const followedUrl = followedMap.get(key);
         if (followedUrl) {
           nameEl.classList.add('bc-followed');
           const link = document.createElement('a');

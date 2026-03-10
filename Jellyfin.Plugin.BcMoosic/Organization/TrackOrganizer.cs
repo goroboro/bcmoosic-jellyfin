@@ -17,6 +17,10 @@ public class TrackOrganizer
     private static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
         { ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".wav", ".aiff", ".aif", ".alac" };
 
+    // Computed once at startup — avoids calling GetInvalidFileNameChars() + Array.IndexOf
+    // per character on every SanitizeName call.
+    private static readonly HashSet<char> InvalidFileNameChars = new(Path.GetInvalidFileNameChars());
+
     private readonly ILogger<TrackOrganizer> _log;
 
     public TrackOrganizer(ILogger<TrackOrganizer> log)
@@ -44,6 +48,10 @@ public class TrackOrganizer
         var musicDirFull = Path.GetFullPath(musicDir).TrimEnd(Path.DirectorySeparatorChar)
                            + Path.DirectorySeparatorChar;
 
+        // Build a case-insensitive name→path cache of existing artist dirs once, rather than
+        // doing a full Directory.GetDirectories scan for every file in the archive (O(n×m) → O(n+m)).
+        var artistDirCache = BuildArtistDirCache(musicDir);
+
         string? destDir = null;
 
         foreach (var filePath in audioFiles)
@@ -55,7 +63,7 @@ public class TrackOrganizer
             artist = SanitizeName(artist.Length > 0 ? artist : Path.GetFileName(Path.GetDirectoryName(filePath) ?? "Unknown Artist"));
             album  = SanitizeName(album.Length  > 0 ? album  : Path.GetFileName(Path.GetDirectoryName(filePath) ?? "Unknown Album"));
 
-            var artistDir = FindOrCreateArtistDir(musicDir, artist);
+            var artistDir = FindOrCreateArtistDir(musicDir, artist, artistDirCache);
             var albumDir  = Path.Combine(artistDir, album);
 
             // Prevent path traversal: resolved path must stay within musicDir
@@ -100,31 +108,40 @@ public class TrackOrganizer
         }
     }
 
-    /// <summary>Find an existing artist folder (case-insensitive match) or create one.</summary>
-    private static string FindOrCreateArtistDir(string musicDir, string artist)
+    /// <summary>
+    /// Scan <paramref name="musicDir"/> once and return a case-insensitive
+    /// dictionary of existing artist folder names to their full paths.
+    /// </summary>
+    private static Dictionary<string, string> BuildArtistDirCache(string musicDir)
     {
-        if (Directory.Exists(musicDir))
-        {
-            foreach (var dir in Directory.GetDirectories(musicDir))
-            {
-                if (string.Equals(Path.GetFileName(dir), artist, StringComparison.OrdinalIgnoreCase))
-                    return dir;
-            }
-        }
+        var cache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(musicDir)) return cache;
+        foreach (var dir in Directory.GetDirectories(musicDir))
+            cache[Path.GetFileName(dir)] = dir;
+        return cache;
+    }
+
+    /// <summary>
+    /// Return an existing artist directory (case-insensitive) from the cache, or
+    /// create a new one and add it to the cache for subsequent files in the same batch.
+    /// </summary>
+    private static string FindOrCreateArtistDir(string musicDir, string artist, Dictionary<string, string> cache)
+    {
+        if (cache.TryGetValue(artist, out var existing)) return existing;
         var newDir = Path.Combine(musicDir, artist);
         Directory.CreateDirectory(newDir);
+        cache[artist] = newDir;
         return newDir;
     }
 
     /// <summary>
     /// Strip characters that are invalid in file/directory names and prevent
     /// path traversal via special names such as ".." or ".".
+    /// Uses a pre-built <see cref="HashSet{T}"/> for O(1) per-character lookup.
     /// </summary>
     private static string SanitizeName(string name)
     {
-        // Use GetInvalidFileNameChars (superset of GetInvalidPathChars — includes / and \)
-        var invalid = Path.GetInvalidFileNameChars();
-        var result = new string(name.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c).ToArray());
+        var result = new string(name.Select(c => InvalidFileNameChars.Contains(c) ? '_' : c).ToArray());
         result = result.Trim().TrimEnd('.');
 
         // Reject path-traversal sequences and empty results
