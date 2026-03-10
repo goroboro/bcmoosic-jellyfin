@@ -21,6 +21,11 @@ public sealed class BandcampClient : IDisposable
 {
     private const string Base = "https://bandcamp.com";
 
+    // Domains that bcMoosic is allowed to make requests to.
+    // Redownload URLs must originate from bandcamp.com; download file URLs are validated
+    // separately (HTTPS-only) because Bandcamp's CDN uses various subdomains.
+    private static readonly string[] AllowedRedownloadHosts = ["bandcamp.com"];
+
     // Injects the raw Cookie header on every request, bypassing CookieContainer
     // which mangles URL-encoded values (the Bandcamp identity cookie contains % and " chars).
     private sealed class CookieInjector : DelegatingHandler
@@ -74,8 +79,8 @@ public sealed class BandcampClient : IDisposable
     /// <summary>Load persisted credentials from plugin configuration (called on first use).</summary>
     public void LoadFromConfig(Configuration.PluginConfiguration cfg)
     {
-        if (_hasCookies) { _log.LogError("BcMoosic LoadFromConfig: already has cookies, skipping"); return; }
-        if (string.IsNullOrEmpty(cfg.BandcampCookies)) { _log.LogError("BcMoosic LoadFromConfig: no cookies in config"); return; }
+        if (_hasCookies) { _log.LogDebug("BcMoosic LoadFromConfig: already has cookies, skipping"); return; }
+        if (string.IsNullOrEmpty(cfg.BandcampCookies)) { _log.LogInformation("BcMoosic LoadFromConfig: no cookies in config"); return; }
         try
         {
             var cookies = JsonSerializer.Deserialize<Dictionary<string, string>>(cfg.BandcampCookies);
@@ -130,10 +135,11 @@ public sealed class BandcampClient : IDisposable
         try
         {
             var resp = await _http.GetAsync($"{Base}/settings/", ct).ConfigureAwait(false);
-            var finalUri = resp.RequestMessage?.RequestUri?.ToString() ?? string.Empty;
-            var ok = !finalUri.Contains("/login", StringComparison.OrdinalIgnoreCase);
-            _log.LogError("BcMoosic VerifyAsync: status={Status} finalUrl={Url} authenticated={Ok}",
-                (int)resp.StatusCode, finalUri, ok);
+            // Check the path component only — avoids false positives from "/login" in a domain name
+            var finalPath = resp.RequestMessage?.RequestUri?.AbsolutePath ?? string.Empty;
+            var ok = !finalPath.Contains("/login", StringComparison.OrdinalIgnoreCase);
+            _log.LogDebug("BcMoosic VerifyAsync: status={Status} finalPath={Path} authenticated={Ok}",
+                (int)resp.StatusCode, finalPath, ok);
             return ok;
         }
         catch (Exception ex)
@@ -236,7 +242,7 @@ public sealed class BandcampClient : IDisposable
         var html = await _http.GetStringAsync($"{Base}/{Username}", ct).ConfigureAwait(false);
         var blob = ParseBlob(html);
 
-        _log.LogError("BcMoosic GetCollection: blob keys = [{Keys}]",
+        _log.LogDebug("BcMoosic GetCollection: blob keys = [{Keys}]",
             string.Join(", ", blob.EnumerateObject().Select(p => p.Name)));
 
         if (!blob.TryGetProperty("collection_data", out var cd))
@@ -247,7 +253,7 @@ public sealed class BandcampClient : IDisposable
         var rdu = cd.TryGetProperty("redownload_urls", out var r) ? r : default;
         var sequence = cd.TryGetProperty("sequence", out var seq) ? seq : default;
 
-        _log.LogError("BcMoosic GetCollection: sequence kind={SeqKind} rdu kind={RduKind} rdu keys={RduKeys}",
+        _log.LogDebug("BcMoosic GetCollection: sequence kind={SeqKind} rdu kind={RduKind} rdu keys={RduKeys}",
             sequence.ValueKind,
             rdu.ValueKind,
             rdu.ValueKind == JsonValueKind.Object
@@ -293,7 +299,7 @@ public sealed class BandcampClient : IDisposable
             }
         }
 
-        _log.LogError("BcMoosic GetCollection: seq={Seq} noPurchased={NP} noSaleId={NS} noRdUrl={NR} kept={Kept}",
+        _log.LogDebug("BcMoosic GetCollection: seq={Seq} noPurchased={NP} noSaleId={NS} noRdUrl={NR} kept={Kept}",
             seqCount, noPurchased, noSaleId, noRdUrl, items.Count);
 
         var moreAvailable = cd.TryGetProperty("more_available", out var ma) && ma.GetBoolean();
@@ -307,6 +313,7 @@ public sealed class BandcampClient : IDisposable
 
     public async Task<DownloadUrls> GetDownloadUrlsAsync(string redownloadUrl, CancellationToken ct = default)
     {
+        ValidateRedownloadUrl(redownloadUrl);
         var html = await _http.GetStringAsync(redownloadUrl, ct).ConfigureAwait(false);
 
         // Try #pagedata blob first
@@ -372,7 +379,7 @@ public sealed class BandcampClient : IDisposable
         var ic = blob.TryGetProperty("item_cache", out var icRoot) && icRoot.TryGetProperty("wishlist", out var wic) ? wic : default;
         var sequence = wd.ValueKind != JsonValueKind.Undefined && wd.TryGetProperty("sequence", out var seq) ? seq : default;
 
-        _log.LogError("BcMoosic GetWishlist: wd={Wd} ic={Ic} seq={Seq} ic_keys=[{IcKeys}]",
+        _log.LogDebug("BcMoosic GetWishlist: wd={Wd} ic={Ic} seq={Seq} ic_keys=[{IcKeys}]",
             wd.ValueKind, ic.ValueKind, sequence.ValueKind,
             ic.ValueKind == JsonValueKind.Object
                 ? string.Join(", ", ic.EnumerateObject().Take(5).Select(p => p.Name))
@@ -382,7 +389,7 @@ public sealed class BandcampClient : IDisposable
         if (sequence.ValueKind == JsonValueKind.Array)
         {
             var seqItems = sequence.EnumerateArray().ToList();
-            _log.LogError("BcMoosic GetWishlist: seq len={Len} first kind={Kind} first val={Val}",
+            _log.LogDebug("BcMoosic GetWishlist: seq len={Len} first kind={Kind} first val={Val}",
                 seqItems.Count,
                 seqItems.Count > 0 ? seqItems[0].ValueKind.ToString() : "n/a",
                 seqItems.Count > 0 ? seqItems[0].ToString() : "n/a");
@@ -404,7 +411,7 @@ public sealed class BandcampClient : IDisposable
                     raw.TryGetProperty("item_url", out var iu) ? iu.GetString() : null));
             }
         }
-        _log.LogError("BcMoosic GetWishlist: returning {Count} items", items.Count);
+        _log.LogDebug("BcMoosic GetWishlist: returning {Count} items", items.Count);
         return new WishlistResult(items);
     }
 
@@ -438,9 +445,16 @@ public sealed class BandcampClient : IDisposable
             }
         }
 
-        // Paginate until we have all bands
+        // Paginate until we have all bands (cap at 50 pages = ~1 000 bands)
+        const int maxPages = 50;
+        int pages = 0;
         while (bands.Count < total && !string.IsNullOrEmpty(lastToken) && fanId.HasValue)
         {
+            if (++pages > maxPages)
+            {
+                _log.LogWarning("GetFollowing: pagination cap reached ({Max} pages); stopping early", maxPages);
+                break;
+            }
             var body = JsonSerializer.Serialize(new { fan_id = fanId.Value, older_than_token = lastToken, count = 20 });
             using var content = new StringContent(body, Encoding.UTF8, "application/json");
             var resp = await _http.PostAsync($"{Base}/api/fancollection/1/following_bands", content, ct).ConfigureAwait(false);
@@ -480,6 +494,24 @@ public sealed class BandcampClient : IDisposable
     // ---------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------
+
+    /// <summary>
+    /// Validates that a redownload URL is an HTTPS URL on bandcamp.com.
+    /// Throws <see cref="BandcampException"/> if the URL is invalid or off-domain.
+    /// </summary>
+    private static void ValidateRedownloadUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+            throw new BandcampException($"Redownload URL must use HTTPS: {url}");
+
+        var host = uri.Host;
+        var allowed = Array.Exists(AllowedRedownloadHosts, h =>
+            host.Equals(h, StringComparison.OrdinalIgnoreCase) ||
+            host.EndsWith("." + h, StringComparison.OrdinalIgnoreCase));
+
+        if (!allowed)
+            throw new BandcampException($"Redownload URL host is not an allowed Bandcamp domain: {host}");
+    }
 
     private static JsonElement ParseBlob(string html)
     {

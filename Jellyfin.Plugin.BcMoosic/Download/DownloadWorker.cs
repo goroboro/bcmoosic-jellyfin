@@ -18,6 +18,9 @@ namespace Jellyfin.Plugin.BcMoosic.Download;
 /// </summary>
 public class DownloadWorker : BackgroundService
 {
+    // Refuse to extract ZIPs that would expand beyond this total size.
+    private const long MaxExtractedBytes = 10L * 1024 * 1024 * 1024; // 10 GiB
+
     private readonly DownloadManager _queue;
     private readonly BandcampClient _bc;
     private readonly TrackOrganizer _organizer;
@@ -58,7 +61,7 @@ public class DownloadWorker : BackgroundService
     private async Task ProcessJobAsync(DownloadJob job, CancellationToken ct)
     {
         var cfg = Plugin.Instance?.Configuration;
-        var tempDir = cfg?.TempDirectory ?? "/tmp/bcmoosic";
+        var tempDir  = cfg?.TempDirectory ?? "/tmp/bcmoosic";
         var musicDir = ResolveMusicDir(cfg);
 
         var jobTempDir = Path.Combine(tempDir, job.Id.ToString("N"));
@@ -78,13 +81,13 @@ public class DownloadWorker : BackgroundService
             var zipPath = Path.Combine(jobTempDir, "download.zip");
             await DownloadFileAsync(downloadUrl, zipPath, job, ct).ConfigureAwait(false);
 
-            // --- Step 3: extract ---
+            // --- Step 3: extract (with path-traversal and ZIP-bomb protection) ---
             job.Status = DownloadStatus.Extracting;
             job.Progress = 0;
             var extractDir = Path.Combine(jobTempDir, "extract");
             Directory.CreateDirectory(extractDir);
             _log.LogInformation("Extracting {Zip}", zipPath);
-            ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
+            ExtractZipSafely(zipPath, extractDir);
             File.Delete(zipPath);
 
             // --- Step 4: organise ---
@@ -117,12 +120,48 @@ public class DownloadWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Extracts a ZIP file while guarding against path-traversal attacks and ZIP bombs.
+    /// Throws <see cref="InvalidOperationException"/> if either check fails.
+    /// </summary>
+    private static void ExtractZipSafely(string zipPath, string extractDir)
+    {
+        var extractRoot = Path.GetFullPath(extractDir).TrimEnd(Path.DirectorySeparatorChar)
+                          + Path.DirectorySeparatorChar;
+        long totalBytes = 0;
+
+        using var archive = ZipFile.OpenRead(zipPath);
+        foreach (var entry in archive.Entries)
+        {
+            // Skip directory-only entries
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+
+            // Resolve and validate — reject any entry that escapes extractDir
+            var destPath = Path.GetFullPath(Path.Combine(extractDir, entry.FullName));
+            if (!destPath.StartsWith(extractRoot, StringComparison.Ordinal))
+                throw new InvalidOperationException($"ZIP entry escapes extraction directory: {entry.FullName}");
+
+            // ZIP bomb protection: check cumulative uncompressed size
+            totalBytes += entry.Length;
+            if (totalBytes > MaxExtractedBytes)
+                throw new InvalidOperationException(
+                    $"ZIP would exceed size limit of {MaxExtractedBytes / 1_073_741_824} GiB");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+            entry.ExtractToFile(destPath, overwrite: true);
+        }
+    }
+
     private async Task DownloadFileAsync(string url, string destPath, DownloadJob job, CancellationToken ct)
     {
+        // Only follow HTTPS URLs — reject any non-HTTPS download target
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException($"Download URL must use HTTPS: {url}");
+
         using var resp = await _http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         resp.EnsureSuccessStatusCode();
 
-        var total = resp.Content.Headers.ContentLength ?? 0L;
+        var total  = resp.Content.Headers.ContentLength ?? 0L;
         var buffer = new byte[81920];
         long received = 0;
 

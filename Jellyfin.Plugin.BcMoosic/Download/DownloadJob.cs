@@ -24,9 +24,9 @@ public class DownloadJob
     public string RedownloadUrl { get; init; } = string.Empty;
 
     public volatile DownloadStatus Status = DownloadStatus.Queued;
-    public int Progress;      // 0–100, updated during download phase
-    public string? Error;
-    public string? DestPath;
+    public volatile int Progress;     // 0–100, updated during download phase
+    public volatile string? Error;
+    public volatile string? DestPath;
 
     public DateTimeOffset CreatedAt { get; } = DateTimeOffset.UtcNow;
 }

@@ -84,8 +84,6 @@ public class BcMoosicController : ControllerBase
     public async Task<ActionResult<AuthStatusResponse>> AuthStatus(CancellationToken ct)
     {
         var cfg = Plugin.Instance?.Configuration;
-        _log.LogError("BcMoosic AuthStatus: cfg.MusicDirectory={Dir} cfg.BandcampUsername={U}",
-            cfg?.MusicDirectory ?? "(null)", cfg?.BandcampUsername ?? "(null)");
         if (cfg is not null) _bc.LoadFromConfig(cfg);
         var authenticated = await _bc.VerifyAsync(ct).ConfigureAwait(false);
         return new AuthStatusResponse(
@@ -137,16 +135,12 @@ public class BcMoosicController : ControllerBase
     [HttpPost("api/settings")]
     public IActionResult UpdateSettings([FromBody] SettingsRequest req)
     {
-        _log.LogError("BcMoosic UpdateSettings: req.MusicDir={Dir} req.DefaultFormat={Fmt}",
-            req.MusicDir ?? "(null)", req.DefaultFormat ?? "(null)");
         SaveToCfg(cfg =>
         {
             if (req.DefaultFormat is not null) cfg.DefaultFormat = req.DefaultFormat;
             if (req.MusicDir is not null) cfg.MusicDirectory = req.MusicDir;
             if (req.TempDir is not null) cfg.TempDirectory = req.TempDir;
         });
-        var savedDir = Plugin.Instance?.Configuration.MusicDirectory ?? "(null)";
-        _log.LogError("BcMoosic UpdateSettings: after save cfg.MusicDirectory={Dir}", savedDir);
         return Ok(new { ok = true });
     }
 
@@ -186,8 +180,6 @@ public class BcMoosicController : ControllerBase
         {
             var result = await _bc.GetWishlistAsync(ct).ConfigureAwait(false);
             var dtos = result.Items.Select(i => new WishlistItemDto(i.Artist, i.Title, i.ItemType, i.ArtUrl, i.ItemUrl)).ToList();
-            _log.LogError("BcMoosic GetWishlist controller: {Count} DTOs, first={A}/{T}",
-                dtos.Count, dtos.FirstOrDefault()?.Artist ?? "(none)", dtos.FirstOrDefault()?.Title ?? "(none)");
             return new WishlistResponse(dtos);
         }
         catch (BandcampException ex)
@@ -264,31 +256,10 @@ public class BcMoosicController : ControllerBase
         var cfg = Plugin.Instance?.Configuration;
         var musicDir = GetMusicDir(cfg);
 
-        _log.LogError("BcMoosic BrowseCollection: musicDir={Dir} exists={Exists}", musicDir, Directory.Exists(musicDir));
         if (!Directory.Exists(musicDir))
             return new LocalCollectionResponse(Array.Empty<ArtistDto>());
         var topDirs = Directory.GetDirectories(musicDir);
-        _log.LogError("BcMoosic BrowseCollection: {N} top-level dirs, first few: [{Names}]",
-            topDirs.Length,
-            string.Join(", ", topDirs.Take(3).Select(Path.GetFileName)));
-
-        // Diagnostic: inspect the first artist dir
-        var firstDir = topDirs.OrderBy(d => Path.GetFileName(d), StringComparer.OrdinalIgnoreCase).FirstOrDefault();
-        if (firstDir != null)
-        {
-            var firstFiles = Directory.GetFiles(firstDir);
-            var firstSubdirs = Directory.GetDirectories(firstDir);
-            _log.LogError("BcMoosic BrowseCollection: first artist='{Name}' files={FC} subdirs={DC} exts=[{Exts}]",
-                Path.GetFileName(firstDir), firstFiles.Length, firstSubdirs.Length,
-                string.Join(", ", firstFiles.Take(5).Select(Path.GetExtension)));
-            if (firstSubdirs.Length > 0)
-            {
-                var firstAlbumFiles = Directory.GetFiles(firstSubdirs[0]);
-                _log.LogError("BcMoosic BrowseCollection: first album='{Alb}' files={FC} exts=[{Exts}]",
-                    Path.GetFileName(firstSubdirs[0]), firstAlbumFiles.Length,
-                    string.Join(", ", firstAlbumFiles.Take(5).Select(Path.GetExtension)));
-            }
-        }
+        _log.LogDebug("BcMoosic BrowseCollection: musicDir={Dir} topLevelDirs={N}", musicDir, topDirs.Length);
 
         var artists = new List<ArtistDto>();
         foreach (var artistDir in Directory.GetDirectories(musicDir).OrderBy(d => Path.GetFileName(d), StringComparer.OrdinalIgnoreCase))
@@ -314,7 +285,7 @@ public class BcMoosicController : ControllerBase
                 artists.Add(new ArtistDto(Path.GetFileName(artistDir), albums));
         }
 
-        _log.LogError("BcMoosic BrowseCollection: returning {N} artists", artists.Count);
+        _log.LogDebug("BcMoosic BrowseCollection: returning {N} artists", artists.Count);
         return new LocalCollectionResponse(artists);
     }
 
@@ -327,13 +298,8 @@ public class BcMoosicController : ControllerBase
         if (cfg is not null && !string.IsNullOrEmpty(cfg.MusicDirectory))
             return cfg.MusicDirectory;
 
-        _log.LogError("BcMoosic GetMusicDir: cfg.MusicDirectory={Dir}", cfg?.MusicDirectory ?? "(null)");
-
         // Auto-detect from Jellyfin's music libraries
         var folders = _libraryManager.GetVirtualFolders();
-        _log.LogError("BcMoosic GetMusicDir: {Count} virtual folders: [{Names}]",
-            folders.Count,
-            string.Join(", ", folders.Select(f => $"{f.Name}({f.CollectionType})")));
         foreach (var folder in folders)
         {
             if (folder.CollectionType == MediaBrowser.Model.Entities.CollectionTypeOptions.music)

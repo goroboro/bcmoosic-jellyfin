@@ -40,7 +40,10 @@ public class TrackOrganizer
             return Task.FromResult(string.Empty);
         }
 
-        // Read tags from all files; group by artist/album
+        // Resolve music dir once for bounds-checking
+        var musicDirFull = Path.GetFullPath(musicDir).TrimEnd(Path.DirectorySeparatorChar)
+                           + Path.DirectorySeparatorChar;
+
         string? destDir = null;
 
         foreach (var filePath in audioFiles)
@@ -49,12 +52,21 @@ public class TrackOrganizer
 
             var (artist, album) = ReadTags(filePath);
 
-            // Sanitize
             artist = SanitizeName(artist.Length > 0 ? artist : Path.GetFileName(Path.GetDirectoryName(filePath) ?? "Unknown Artist"));
-            album = SanitizeName(album.Length > 0 ? album : Path.GetFileName(Path.GetDirectoryName(filePath) ?? "Unknown Album"));
+            album  = SanitizeName(album.Length  > 0 ? album  : Path.GetFileName(Path.GetDirectoryName(filePath) ?? "Unknown Album"));
 
             var artistDir = FindOrCreateArtistDir(musicDir, artist);
-            var albumDir = Path.Combine(artistDir, album);
+            var albumDir  = Path.Combine(artistDir, album);
+
+            // Prevent path traversal: resolved path must stay within musicDir
+            var albumDirFull = Path.GetFullPath(albumDir).TrimEnd(Path.DirectorySeparatorChar)
+                               + Path.DirectorySeparatorChar;
+            if (!albumDirFull.StartsWith(musicDirFull, StringComparison.Ordinal))
+            {
+                _log.LogWarning("Skipping file with path-traversal tags: artist={A} album={B}", artist, album);
+                continue;
+            }
+
             Directory.CreateDirectory(albumDir);
 
             var destFile = Path.Combine(albumDir, Path.GetFileName(filePath));
@@ -79,7 +91,10 @@ public class TrackOrganizer
             var album = tagFile.Tag.Album ?? string.Empty;
             return (artist.Trim(), album.Trim());
         }
-        catch
+        catch (Exception ex) when (ex is TagLib.UnsupportedFormatException
+                                       or TagLib.CorruptFileException
+                                       or IOException
+                                       or UnauthorizedAccessException)
         {
             return (string.Empty, string.Empty);
         }
@@ -101,11 +116,22 @@ public class TrackOrganizer
         return newDir;
     }
 
+    /// <summary>
+    /// Strip characters that are invalid in file/directory names and prevent
+    /// path traversal via special names such as ".." or ".".
+    /// </summary>
     private static string SanitizeName(string name)
     {
-        var invalid = Path.GetInvalidPathChars();
+        // Use GetInvalidFileNameChars (superset of GetInvalidPathChars — includes / and \)
+        var invalid = Path.GetInvalidFileNameChars();
         var result = new string(name.Select(c => Array.IndexOf(invalid, c) >= 0 ? '_' : c).ToArray());
-        return result.Trim().TrimEnd('.');
+        result = result.Trim().TrimEnd('.');
+
+        // Reject path-traversal sequences and empty results
+        if (result is ".." or "." || result.Length == 0)
+            result = "_";
+
+        return result;
     }
 
     private static void MoveOrReplace(string src, string dest)
