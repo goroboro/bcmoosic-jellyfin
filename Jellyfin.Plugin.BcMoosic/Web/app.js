@@ -493,7 +493,12 @@ async function loadCollection() {
       if (hasLetter.has(letter)) {
         btn.onclick = () => {
           const target = list.querySelector(`.alpha-letter[data-letter="${letter}"]`);
-          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (!target) return;
+          const main = document.getElementById('app');
+          const delta = target.getBoundingClientRect().top
+                      - main.getBoundingClientRect().top
+                      - nav.offsetHeight;
+          main.scrollBy({ top: delta, behavior: 'smooth' });
         };
       }
       nav.appendChild(btn);
