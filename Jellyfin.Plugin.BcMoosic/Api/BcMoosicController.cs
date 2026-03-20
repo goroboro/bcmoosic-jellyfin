@@ -90,7 +90,8 @@ public class BcMoosicController : ControllerBase
             authenticated,
             _bc.Username,
             cfg?.DefaultFormat ?? "mp3-320",
-            GetMusicDir(cfg));
+            GetMusicDir(cfg),
+            GetTempDir(cfg));
     }
 
     [HttpPost("api/auth/cookies")]
@@ -128,9 +129,7 @@ public class BcMoosicController : ControllerBase
         {
             defaultFormat = cfg?.DefaultFormat ?? "mp3-320",
             musicDir = GetMusicDir(cfg),
-            tempDir = !string.IsNullOrEmpty(cfg?.TempDirectory)
-                ? cfg.TempDirectory
-                : Path.Combine(Plugin.Instance?.JellyfinTempPath ?? Path.GetTempPath(), "bcmoosic"),
+            tempDir = GetTempDir(cfg),
         });
     }
 
@@ -310,6 +309,14 @@ public class BcMoosicController : ControllerBase
         }
 
         return "/music";
+    }
+
+    private static string GetTempDir(Configuration.PluginConfiguration? cfg)
+    {
+        if (cfg is not null && !string.IsNullOrEmpty(cfg.TempDirectory))
+            return cfg.TempDirectory;
+        var jellyfinTemp = Plugin.Instance?.JellyfinTempPath;
+        return Path.Combine(!string.IsNullOrEmpty(jellyfinTemp) ? jellyfinTemp : Path.GetTempPath(), "bcmoosic");
     }
 
     private static void SaveToCfg(Action<Configuration.PluginConfiguration> mutate)

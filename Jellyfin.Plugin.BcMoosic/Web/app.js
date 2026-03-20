@@ -108,6 +108,7 @@ async function checkAuth() {
     if (s.musicDir) {
       document.getElementById('pref-music-dir').value = s.musicDir;
     }
+    document.getElementById('pref-temp-dir').value = s.tempDir ?? '';
     return s.authenticated;
   } catch {
     const badge = document.getElementById('auth-badge');
@@ -154,10 +155,11 @@ document.getElementById('prefs-form').addEventListener('submit', async e => {
   const status = document.getElementById('prefs-status');
   const fmt = document.getElementById('pref-format').value;
   const musicDir = document.getElementById('pref-music-dir').value.trim();
+  const tempDir = document.getElementById('pref-temp-dir').value.trim();
   try {
     await api(`${API_BASE}/settings`, {
       method: 'POST',
-      body: JSON.stringify({ defaultFormat: fmt, musicDir: musicDir || null }),
+      body: JSON.stringify({ defaultFormat: fmt, musicDir: musicDir || null, tempDir: tempDir || null }),
     });
     state.defaultFormat = fmt;
     setStatus(status, 'Saved.', 'ok');

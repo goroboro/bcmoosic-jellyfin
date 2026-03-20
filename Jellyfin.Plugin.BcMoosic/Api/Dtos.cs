@@ -11,7 +11,8 @@ public record AuthStatusResponse(
     [property: JsonPropertyName("authenticated")] bool Authenticated,
     [property: JsonPropertyName("username")] string Username,
     [property: JsonPropertyName("defaultFormat")] string DefaultFormat,
-    [property: JsonPropertyName("musicDir")] string MusicDir);
+    [property: JsonPropertyName("musicDir")] string MusicDir,
+    [property: JsonPropertyName("tempDir")] string TempDir);
 
 public record CookieRequest(
     [property: JsonPropertyName("identity")] string Identity,
