@@ -17,6 +17,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <summary>Gets the singleton plugin instance (set on construction).</summary>
     public static Plugin? Instance { get; private set; }
 
+    /// <summary>Gets Jellyfin's own temp directory — guaranteed writable by the Jellyfin process.</summary>
+    public string JellyfinTempPath { get; }
+
     /// <inheritdoc />
     public override Guid Id => new("d8f3c2a4-e1b7-4f5d-8c9e-2a3b4c5d6e7f");
 
@@ -33,6 +36,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {
+        JellyfinTempPath = applicationPaths.TempDirectory;
         Instance = this;
     }
 

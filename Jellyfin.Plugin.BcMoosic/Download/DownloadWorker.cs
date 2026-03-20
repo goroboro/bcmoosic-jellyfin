@@ -61,7 +61,7 @@ public class DownloadWorker : BackgroundService
     private async Task ProcessJobAsync(DownloadJob job, CancellationToken ct)
     {
         var cfg = Plugin.Instance?.Configuration;
-        var tempDir  = cfg?.TempDirectory ?? "/tmp/bcmoosic";
+        var tempDir  = ResolveTempDir(cfg);
         var musicDir = ResolveMusicDir(cfg);
 
         var jobTempDir = Path.Combine(tempDir, job.Id.ToString("N"));
@@ -183,6 +183,15 @@ public class DownloadWorker : BackgroundService
         if (cfg is not null && !string.IsNullOrEmpty(cfg.MusicDirectory))
             return cfg.MusicDirectory;
         return "/music";
+    }
+
+    private static string ResolveTempDir(Configuration.PluginConfiguration? cfg)
+    {
+        if (cfg is not null && !string.IsNullOrEmpty(cfg.TempDirectory))
+            return cfg.TempDirectory;
+        // Fall back to Jellyfin's own temp directory (guaranteed writable by the Jellyfin process)
+        var jellyfinTemp = Plugin.Instance?.JellyfinTempPath;
+        return Path.Combine(!string.IsNullOrEmpty(jellyfinTemp) ? jellyfinTemp : Path.GetTempPath(), "bcmoosic");
     }
 
     public override void Dispose()

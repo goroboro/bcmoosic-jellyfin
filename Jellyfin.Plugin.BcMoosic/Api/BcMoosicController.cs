@@ -128,7 +128,9 @@ public class BcMoosicController : ControllerBase
         {
             defaultFormat = cfg?.DefaultFormat ?? "mp3-320",
             musicDir = GetMusicDir(cfg),
-            tempDir = cfg?.TempDirectory ?? "/tmp/bcmoosic",
+            tempDir = !string.IsNullOrEmpty(cfg?.TempDirectory)
+                ? cfg.TempDirectory
+                : Path.Combine(Plugin.Instance?.JellyfinTempPath ?? Path.GetTempPath(), "bcmoosic"),
         });
     }
 

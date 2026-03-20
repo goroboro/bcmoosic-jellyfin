@@ -14,7 +14,7 @@ public class PluginConfiguration : BasePluginConfiguration
         BandcampCookies = string.Empty;
         DefaultFormat = "mp3-320";
         MusicDirectory = string.Empty;   // empty = auto-detect from Jellyfin's music library
-        TempDirectory = "/tmp/bcmoosic";
+        TempDirectory = string.Empty;  // empty = use Jellyfin's own temp directory
     }
 
     /// <summary>Bandcamp username (profile slug).</summary>
@@ -35,6 +35,6 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string MusicDirectory { get; set; }
 
-    /// <summary>Directory for in-progress downloads. Defaults to /tmp/bcmoosic.</summary>
+    /// <summary>Directory for in-progress downloads. Empty = use Jellyfin's own temp directory.</summary>
     public string TempDirectory { get; set; }
 }
