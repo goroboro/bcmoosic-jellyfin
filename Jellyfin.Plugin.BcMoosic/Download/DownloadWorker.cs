@@ -149,6 +149,13 @@ public class DownloadWorker : BackgroundService
 
             Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
             entry.ExtractToFile(destPath, overwrite: true);
+
+            // Some ZIP files embed restrictive UNIX modes (e.g. 000) that make extracted
+            // files unreadable even to the owning process. Normalise to rw-r--r--.
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+                File.SetUnixFileMode(destPath,
+                    UnixFileMode.UserRead  | UnixFileMode.UserWrite |
+                    UnixFileMode.GroupRead | UnixFileMode.OtherRead);
         }
     }
 
